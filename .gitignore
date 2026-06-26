@@ -36,4 +36,4 @@ npm-debug.log*
 # Coverage
 coverage/
 
-.agent
+.agents/
