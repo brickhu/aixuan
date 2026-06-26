@@ -14,7 +14,7 @@
 - **样式**: [TailwindCSS](https://tailwindcss.com)
 - **构建**: [Vite](https://vitejs.dev)
 - **路由**: solid-router
-- **部署**: 腾讯云静态网站托管 / COS + CDN
+- **部署**: 腾讯云Cloudbase静态托管
 
 ### 后端
 - **运行时**: Node.js + TypeScript（strict 模式）

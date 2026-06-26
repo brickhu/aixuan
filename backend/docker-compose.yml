@@ -1,0 +1,20 @@
+# 本地开发环境 — 提供 PostgreSQL 数据库
+# 生产环境使用腾讯云 CloudBase 云托管 + TDSQL-C
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: aixuan-pg
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: aixuan
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+    driver: local

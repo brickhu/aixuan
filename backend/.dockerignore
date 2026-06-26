@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+.env.*
+*.db
+*.sqlite
+coverage/
+.git
+.gitignore
+*.tsbuildinfo
+.DS_Store

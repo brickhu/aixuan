@@ -2,7 +2,7 @@
 
 ## 项目概述
 
-爱选是一个 AI 驱动的商品导购平台，用户通过自然语言对话描述购买需求，AI 逐步引导用户明确需求，最终生成带 CPS 推广链接的商品推荐。
+爱选是一个 **AI 驱动的商品导购平台**，用户通过自然语言对话描述购买需求，AI 逐步引导用户明确需求，最终生成带 CPS 推广链接的商品推荐。
 
 - **域名**: www.aixuan.io
 - **定位**: 通用导购系统，覆盖多电商平台的 CPS
@@ -14,19 +14,30 @@
 ## 技术栈
 
 ### 前端
-- **框架**: SolidJS（响应式，细粒度更新）
-- **样式**: TailwindCSS
+- **框架**: [SolidJS](https://solidjs.com/)（响应式，细粒度更新）
+- **样式**: [TailwindCSS](https://unocss.dev) 4.x（采用最新版）
 - **构建**: Vite
-- **状态管理**: SolidJS 内置信号机制（无需额外状态库）
 - **路由**: solid-router
-- **部署**: 腾讯云静态网站托管 / COS + CDN
-- **域名**: www.aixuan.io → 腾讯云 CDN
+- **部署**: 腾讯云 CloudBase 云托管（静态网站）
+
+### 后端
+- **运行时**: Node.js 20 + TypeScript (strict)
+- **框架**: [Hono](https://hono.dev)（轻量，支持 SSE 流式响应）
+- **数据库**: [PostgreSQL 17](https://www.postgresql.org/)（腾讯云 TDSQL-C）
+- **数据库驱动**: `pg` (node-postgres) + 连接池
+- **AI**: [DeepSeek API](https://platform.deepseek.com/)（兼容 OpenAI SDK）+ Function Calling
+- **部署**: 腾讯云 CloudBase 云托管（容器模式，Docker 部署）
 
 ### 用户系统
-- **认证服务**: 腾讯云 CIAM（Customer Identity and Access Management，身份管理服务）
-- **能力**: 微信扫码/手机验证码/邮箱密码/小程序授权 等多种登录方式
-- **集成**: 后端验证 CIAM 签发的 JWT Token，不自行管理密码
-- **用户数据**: 用户基础信息由 CIAM 托管，应用数据库只存用户 ID 和应用级数据（积分、导购历史等）
+- **认证服务**: 腾讯云 CloudBase 内置身份认证
+- **能力**: 自定义登录、匿名登录、微信扫码、手机验证码、邮箱密码
+- **流程**: 后端签发 Ticket → 前端兑换 access_token → 后端验证 JWT
+- **用户数据**: CloudBase Auth 托管用户基础信息，应用数据库仅存用户 ID 和应用级数据
+
+### 云环境
+- **CloudBase 环境 ID**: `aixuan-dev-d4gpc3d6p36f37a1e`
+- **数据库实例 ID**: `postgres-6ypc3w9s`（TDSQL-C PostgreSQL 17.10）
+- **域名**: www.aixuan.io → CloudBase 自定义域名
 
 ### CPS 联盟接入（直连官方 API）
 - 淘宝/天猫 → 阿里妈妈 TOP API
@@ -34,68 +45,78 @@
 - 拼多多 → 多多客 API
 - 抖音 → 抖客 / 精选联盟 API（待确认接入方式）
 
+
 ---
 
 ## 目录结构
 
 ```
 aixuan/
-├── CLAUDE.md            # 本文件
+├── CLAUDE.md                         # 本文件
 │
-├── frontend/                # SolidJS 前端
+├── frontend/                         # SolidJS 前端
 │   ├── src/
-│   │   ├── components/      # 通用组件
+│   │   ├── components/               # 通用组件
 │   │   │   ├── ChatBox.tsx
 │   │   │   ├── ProductCard.tsx
 │   │   │   ├── GuideStep.tsx
 │   │   │   └── UserLogin.tsx
-│   │   ├── routes/          # 页面
+│   │   ├── pages/                   # 页面
 │   │   │   ├── Home.tsx
 │   │   │   ├── Chat.tsx
 │   │   │   ├── History.tsx
 │   │   │   ├── Profile.tsx
 │   │   │   └── Login.tsx
-│   │   ├── stores/          # 信号存储
-│   │   ├── api/             # 后端 API 调用
-│   │   └── types/           # 共享类型
+│   │   ├── stores/                   # 信号存储
+│   │   ├── api/                      # 后端 API 调用
+│   │   └── types/                    # 共享类型
+│   │   └── index.tsx/                # 入口文件，集成Router和样式等
 │   ├── package.json
 │   └── vite.config.ts
 │
-├── backend/                 # Node.js 后端
-│   ├── src/
-│   │   ├── index.ts         # 入口
-│   │   ├── config.ts        # 配置
-│   │   ├── db/              # 数据库
-│   │   │   ├── schema.sql
-│   │   │   └── index.ts
-│   │   ├── agent/           # Agent 核心
-│   │   │   ├── agent.ts     # 对话管理
-│   │   │   ├── tools.ts     # Function Call 定义
-│   │   │   ├── prompts.ts   # 提示词
-│   │   │   └── sessions.ts  # 会话管理
-│   │   ├── cps/             # CPS 适配器
-│   │   │   ├── adapter.ts   # 抽象接口
-│   │   │   ├── taobao.ts    # 淘宝
-│   │   │   ├── jd.ts        # 京东
-│   │   │   ├── pdd.ts       # 拼多多
-│   │   │   └── douyin.ts    # 抖音
-│   │   ├── user/            # 用户模块（CIAM 托管认证，此处仅应用数据）
-│   │   │   ├── ciam.ts      # CIAM Token 验证与用户同步
-│   │   │   ├── points.ts    # 积分管理
-│   │   │   └── profile.ts   # 用户资料
-│   │   ├── routes/          # API 路由
-│   │   │   ├── chat.ts
-│   │   │   ├── auth.ts
-│   │   │   ├── history.ts
-│   │   │   └── user.ts
-│   │   └── middleware/      # 中间件
-│   │       └── auth.ts
+├── backend/                          # Node.js 后端
+│   ├── Dockerfile
+│   ├── .dockerignore
+│   ├── .env.example
 │   ├── package.json
-│   └── tsconfig.json
+│   ├── tsconfig.json
+│   ├── scripts/
+│   │   └── dev.sh
+│   └── src/
+│       ├── index.ts                  # 入口
+│       ├── config.ts                 # 配置
+│       ├── db/                       # 数据库
+│       │   ├── migrate.ts            # 自动迁移
+│       │   └── pool.ts               # PG 连接池
+│       ├── agent/                    # Agent 核心
+│       │   ├── agent.ts              # 对话管理
+│       │   ├── tools.ts              # Function Call 定义
+│       │   ├── prompts.ts            # 提示词
+│       │   └── sessions.ts           # 会话管理
+│       ├── cps/                      # CPS 适配器
+│       │   ├── adapter.ts            # 抽象接口
+│       │   ├── taobao.ts             # 淘宝
+│       │   ├── jd.ts                 # 京东
+│       │   ├── pdd.ts                # 拼多多
+│       │   └── douyin.ts             # 抖音
+│       ├── user/                     # 用户模块
+│       │   ├── auth.ts               # CloudBase 认证
+│       │   ├── points.ts             # 积分管理
+│       │   └── profile.ts            # 用户资料
+│       ├── routes/                   # API 路由
+│       │   ├── chat.ts
+│       │   ├── auth.ts
+│       │   ├── history.ts
+│       │   └── user.ts
+│       └── middleware/               # 中间件
+│           └── auth.ts               # CloudBase JWT 验证
 │
-├── scripts/                 # 开发/部署脚本
-│   ├── dev.sh
-│   └── deploy.sh
+├── scripts/                          # 开发/部署脚本
+│   └── dev.sh
+│
+├── .github/
+│   └── workflows/
+│       └── deploy.yml                # GitHub Actions 自动部署
 │
 └── README.md
 ```
@@ -104,28 +125,19 @@ aixuan/
 
 ## 数据模型
 
-### SQLite Schema
+### PostgreSQL Schema
 
 ```sql
--- 用户表（基础信息由腾讯云 CIAM 托管，本地仅存应用数据）
+-- 用户表（基础信息由 CloudBase Auth 托管，本地仅存应用数据）
 CREATE TABLE users (
-  id            TEXT PRIMARY KEY,          -- 与 CIAM 的 User ID 一致
+  id            TEXT PRIMARY KEY,          -- 与 CloudBase Auth 的 UID 一致
   nickname      TEXT,
   avatar_url    TEXT,
   points        INTEGER DEFAULT 0,         -- 积分余额
   total_earned  REAL DEFAULT 0.0,          -- 累计返利(元)
   total_saved   REAL DEFAULT 0.0,          -- 累计帮用户省了多少钱
-  created_at    TEXT DEFAULT (datetime('now')),
-  updated_at    TEXT DEFAULT (datetime('now'))
-);
-
--- 第三方登录绑定
-CREATE TABLE user_oauths (
-  id            TEXT PRIMARY KEY,
-  user_id       TEXT NOT NULL REFERENCES users(id),
-  provider      TEXT NOT NULL,             -- 'wechat' | 'github' | ...
-  provider_uid  TEXT NOT NULL,
-  UNIQUE(provider, provider_uid)
+  created_at    TIMESTAMP DEFAULT NOW(),
+  updated_at    TIMESTAMP DEFAULT NOW()
 );
 
 -- 导购会话
@@ -134,9 +146,9 @@ CREATE TABLE sessions (
   user_id       TEXT REFERENCES users(id), -- NULL 允许未登录体验
   status        TEXT DEFAULT 'active',     -- 'active' | 'completed'
   summary       TEXT,                      -- 用户最终购买需求总结
-  product_count INTEGER DEFAULT 0,        -- 推荐商品数
-  created_at    TEXT DEFAULT (datetime('now')),
-  updated_at    TEXT DEFAULT (datetime('now'))
+  product_count INTEGER DEFAULT 0,         -- 推荐商品数
+  created_at    TIMESTAMP DEFAULT NOW(),
+  updated_at    TIMESTAMP DEFAULT NOW()
 );
 
 -- 对话消息
@@ -146,27 +158,27 @@ CREATE TABLE messages (
   role          TEXT NOT NULL,             -- 'user' | 'assistant' | 'tool'
   content       TEXT NOT NULL,             -- markdown / JSON
   msg_type      TEXT DEFAULT 'text',       -- 'text' | 'product_card' | 'guide'
-  metadata      TEXT,                      -- JSON, 额外数据
-  created_at    TEXT DEFAULT (datetime('now'))
+  metadata      JSONB,                     -- 额外数据
+  created_at    TIMESTAMP DEFAULT NOW()
 );
 
 -- 推荐商品
 CREATE TABLE products (
-  id            TEXT PRIMARY KEY,
-  session_id    TEXT NOT NULL REFERENCES sessions(id),
-  platform      TEXT NOT NULL,             -- 'taobao' | 'jd' | 'pdd' | 'douyin'
-  title         TEXT NOT NULL,
-  price         REAL NOT NULL,
-  original_price REAL,
-  image_url     TEXT,
-  item_url      TEXT,                      -- 原始商品页
-  coupon_url    TEXT,                      -- 优惠券链接
-  commission_rate REAL,                    -- 佣金率
-  commission_amount REAL,                  -- 预估佣金
-  sales_count   INTEGER,
-  shop_name     TEXT,
-  rank          INTEGER,                   -- 推荐排序
-  created_at    TEXT DEFAULT (datetime('now'))
+  id              TEXT PRIMARY KEY,
+  session_id      TEXT NOT NULL REFERENCES sessions(id),
+  platform        TEXT NOT NULL,             -- 'taobao' | 'jd' | 'pdd' | 'douyin'
+  title           TEXT NOT NULL,
+  price           REAL NOT NULL,
+  original_price  REAL,
+  image_url       TEXT,
+  item_url        TEXT,                      -- 原始商品页
+  coupon_url      TEXT,                      -- 优惠券链接
+  commission_rate REAL,                      -- 佣金率
+  commission_amount REAL,                    -- 预估佣金
+  sales_count     INTEGER,
+  shop_name       TEXT,
+  rank            INTEGER,                   -- 推荐排序
+  created_at      TIMESTAMP DEFAULT NOW()
 );
 
 -- 点击/转化追踪
@@ -181,8 +193,8 @@ CREATE TABLE clicks (
   user_agent    TEXT,
   converted     INTEGER DEFAULT 0,          -- 是否已购买
   commission    REAL DEFAULT 0.0,           -- 佣金金额
-  clicked_at    TEXT DEFAULT (datetime('now')),
-  converted_at  TEXT
+  clicked_at    TIMESTAMP DEFAULT NOW(),
+  converted_at  TIMESTAMP
 );
 
 -- 用户积分记录
@@ -193,7 +205,7 @@ CREATE TABLE point_transactions (
   type          TEXT NOT NULL,             -- 'signin' | 'share' | 'purchase' | 'redeem'
   reference_id  TEXT,                      -- 关联的click/conversion ID
   note          TEXT,
-  created_at    TEXT DEFAULT (datetime('now'))
+  created_at    TIMESTAMP DEFAULT NOW()
 );
 
 -- 索引
@@ -207,6 +219,64 @@ CREATE INDEX idx_points_user ON point_transactions(user_id);
 
 ---
 
+## CloudBase 认证系统
+
+### 认证流程
+
+```
+前端 (浏览器)                         后端 (CloudBase Cloud Run)
+    │                                       │
+    │  ① 调用后端 /api/auth/ticket          │
+    │─────────────────────────────────────> │
+    │  ← { ticket }                         │  后端使用 CloudBase SDK 签发 ticket
+    │                                       │
+    │  ② 用 ticket 调用 CloudBase Auth API  │
+    │─────────────────────────────────>     │
+    │  ← { access_token, refresh_token }     │  CloudBase Auth 返回 JWT
+    │                                       │
+    │  ③ 后续请求带 Bearer token            │
+    │─────────────────────────────────────> │  后端验证 JWT → 获取 UID
+    │  ← { ok: true, data: ... }            │
+```
+
+### 后端验证 Token
+
+后端通过 JWT 解码验证 CloudBase Auth 签发的 access_token（无需额外网络请求）：
+
+```typescript
+// middleware/auth.ts
+import { jwtVerify } from 'jose';
+
+// CloudBase Auth 的 JWT 公钥端点
+const JWKS_URI = `https://${ENV_ID}.api.tcloudbasegateway.com/auth/v1/jwks`;
+
+export async function requireAuth(c: Context, next: Next) {
+  const token = c.req.header('Authorization')?.slice(7);
+  const payload = await verifyCloudBaseToken(token);
+  if (!payload) return c.json({ ok: false, error: 'Unauthorized' }, 401);
+  c.set('userId', payload.sub);  // sub = CloudBase UID
+  await next();
+}
+```
+
+### 自定义登录（后端签发 Ticket）
+
+```typescript
+import cloudbase from '@cloudbase/node-sdk';
+
+const app = cloudbase.init({
+  env: 'aixuan-dev-d4gpc3d6p36f37a1e',
+  credentials: require('./tcb_custom_login.json'),
+});
+
+const ticket = app.auth().createTicket('user-custom-id', {
+  refresh: 3600 * 1000,      // access_token 刷新间隔
+  expire: 24 * 3600 * 1000,  // ticket 过期时间
+});
+```
+
+---
+
 ## CPS 适配器设计
 
 ### 策略模式
@@ -214,22 +284,13 @@ CREATE INDEX idx_points_user ON point_transactions(user_id);
 所有 CPS 平台统一通过抽象接口调用，新增平台只需实现接口。
 
 ```typescript
-// packages/backend/src/cps/adapter.ts
+// backend/src/cps/adapter.ts
 
 interface CPSAdapter {
-  /** 平台标识 */
   readonly platform: 'taobao' | 'jd' | 'pdd' | 'douyin';
-
-  /** 搜索商品 */
   search(params: SearchParams): Promise<SearchResult[]>;
-
-  /** 根据商品ID获取详情 */
   getDetail(itemId: string): Promise<ProductDetail>;
-
-  /** 生成推广链接 */
   generatePromotionLink(itemId: string, pid: string): Promise<string>;
-
-  /** 获取佣金信息 */
   getCommission(itemId: string): Promise<CommissionInfo>;
 }
 
@@ -298,7 +359,7 @@ Agent 综合推荐 (返回商品卡片列表):
 ### Function Calling Tools 定义
 
 ```typescript
-// packages/backend/src/agent/tools.ts
+// backend/src/agent/tools.ts
 
 const tools = [
   {
@@ -350,7 +411,7 @@ const tools = [
 3. 当需求明确后，调用 search_products 搜索
 4. 从搜索结果中挑选 3-5 件推荐给用户
 5. 推荐时说明推荐理由
-6. 用户表示感兴趣后，主动询问是否需要生成推广链接
+6. 用户表示感兴趣后，自动生成推广链接+推荐理由
 
 风格要求：
 - 热情、专业、不强行推销
@@ -379,46 +440,126 @@ const tools = [
 ## API 路由设计
 
 ```
-# 认证（腾讯云 CIAM 处理前端登录流程，后端只验证 Token）
-POST   /api/auth/ciam-callback     # CIAM 登录后，前端传 Token 给后端换取应用 Session
-POST   /api/auth/refresh           # 刷新 CIAM Token
-DELETE /api/auth/logout            # 登出
+# 认证（CloudBase Auth 管理登录流程，后端签发 Ticket + 验证 Token）
+POST   /api/auth/ticket              # 为当前用户签发自定义登录 Ticket
 
 # 聊天
-POST   /api/chat/session           # 创建新会话
-POST   /api/chat/session/:id       # 发送消息(SSE流式返回)
-GET    /api/chat/session/:id       # 获取会话历史
-GET    /api/chat/sessions          # 用户的所有会话
+POST   /api/chat/session             # 创建新会话
+POST   /api/chat/session/:id         # 发送消息(SSE流式返回)
+GET    /api/chat/session/:id         # 获取会话历史
+GET    /api/chat/sessions            # 用户的所有会话
 
 # CPS
-POST   /api/cps/link               # 生成推广链接(记录点击)
-GET    /api/cps/platforms          # 支持的平台列表
+POST   /api/cps/link                 # 生成推广链接(记录点击)
+GET    /api/cps/platforms            # 支持的平台列表
 
 # 用户（仅应用级数据）
-GET    /api/user/profile           # 用户信息（积分数、导购次数等）
-GET    /api/user/points            # 积分明细
-POST   /api/user/signin            # 每日签到
+GET    /api/user/profile             # 用户信息（积分数、导购次数等）
+GET    /api/user/points              # 积分明细
+POST   /api/user/signin              # 每日签到
 
 # 数据
-GET    /api/history                # 导购历史
-GET    /api/stats/click            # 点击统计
+GET    /api/history                  # 导购历史
+GET    /api/stats/click              # 点击统计
 ```
 
 ---
 
-## 腾讯云部署
+## CloudBase 云托管部署
 
-### 前端
-- 静态网站托管/腾讯云 COS + CDN
-- 自定义域名 www.aixuan.io 绑定 CDN
-- HTTPS 证书（腾讯云免费 SSL）
-- 构建产物输出到 dist/，上传至 COS
+### 环境信息
 
-### 后端
-- 方案 A: 腾讯云 SCF（云函数） + API 网关
-- 方案 B: 轻量云服务器 CVM + PM2
-- SQLite 数据库文件存在云硬盘 (CBS) 或 SCF 层中
-- 环境变量管理敏感信息（API Keys, Secrets）
+| 资源 | 值 |
+|------|-----|
+| CloudBase 环境 ID | `aixuan-dev-d4gpc3d6p36f37a1e` |
+| 数据库实例 ID | `postgres-6ypc3w9s` (TDSQL-C PostgreSQL 17.10) |
+| 数据库引擎 | PostgreSQL 17.10 |
+| 默认端口 | 5432 |
+| 部署方式 | 容器模式 (Docker) |
+
+### 后端云托管
+
+后端的 Dockerfile 位于 `backend/Dockerfile`。CloudBase 云托管会从代码仓库（或 CLI 上传）自动构建容器镜像并部署。
+
+#### 核心要求
+
+1. **监听 `0.0.0.0`**（通过 `HOSTNAME=0.0.0.0` 环境变量）
+2. **端口 3000**（CloudBase 配置与此一致）
+3. **健康检查端点**：`GET /api/health`
+4. **非 root 用户**运行容器
+5. **多阶段构建**以减小镜像体积
+
+#### 环境变量配置
+
+| 变量 | 必填 | 说明 |
+|------|------|------|
+| `DEEPSEEK_API_KEY` | 是 | DeepSeek API 密钥 |
+| `DEEPSEEK_BASE_URL` | 否 | `https://api.deepseek.com` | DeepSeek API 地址 |
+| `DEEPSEEK_MODEL` | 否 | `deepseek-chat` | 模型名称 |
+| `DATABASE_URL` | 是 | PostgreSQL 连接串（TDSQL-C 内网地址） |
+| `CLOUDBASE_ENV_ID` | 是 | CloudBase 环境 ID |
+| `CLOUDBASE_ACCESS_KEY` | 是 | CloudBase 自定义登录私钥文件路径 |
+| `CORS_ORIGIN` | 否 | 前端地址，默认 `http://localhost:5173` |
+| `CPS_TAOBAO_APP_KEY` | 否 | 淘宝客 App Key |
+| `CPS_TAOBAO_APP_SECRET` | 否 | 淘宝客 App Secret |
+| `CPS_TAOBAO_PID` | 否 | 淘宝客推广位 PID |
+| `CPS_JD_API_KEY` | 否 | 京东联盟 API Key |
+| `CPS_PDD_API_KEY` | 否 | 拼多多多多客 API Key |
+
+#### 数据库连接
+
+应用通过 `DATABASE_URL` 环境变量连接 TDSQL-C PostgreSQL：
+
+```
+postgresql://username:password@10.x.x.x:5432/aixuan?sslmode=disable
+```
+
+CloudBase Cloud Run 与 TDSQL-C 需在 **同一 VPC** 内。连接信息在 TDSQL-C 控制台 → 实例详情中获取（内网 IP、端口、用户名、密码）。
+
+### 前端云托管
+
+前端构建产物（`dist/` 目录）通过 CloudBase 托管为静态网站，绑定自定义域名 `www.aixuan.io`。
+
+### GitHub Actions 自动部署
+
+项目根目录的 `.github/workflows/deploy.yml` 配置了 CI/CD 流水线：
+
+```yaml
+name: Deploy to CloudBase
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npm run build
+        working-directory: ./backend
+      - run: npm install -g @cloudbase/cli
+      - run: |
+          tcb login --apiKeyId ${{ secrets.TCB_SECRET_ID }} \
+                    --apiKey ${{ secrets.TCB_SECRET_KEY }}
+          tcb cloudrun deploy \
+            -e ${{ secrets.TCB_ENV_ID }} \
+            -s aixuan-backend \
+            --port 3000 \
+            --force
+```
+
+#### GitHub Secrets 配置
+
+| Secret | 来源 |
+|--------|------|
+| `TCB_SECRET_ID` | 腾讯云 CAM → 访问管理 → API 密钥管理 |
+| `TCB_SECRET_KEY` | 同上（创建时保存） |
+| `TCB_ENV_ID` | CloudBase 控制台 → 环境概览 |
 
 ---
 
@@ -442,12 +583,12 @@ GET    /api/stats/click            # 点击统计
 - 组件文件使用 `.tsx`
 - 纯逻辑/工具函数使用 `.ts`
 - 使用 `<Show>` `<For>` `<Switch>` 条件渲染，不用三元/&&
-- TailwindCSS 类：按 布局 → 宽高 → 间距 → 颜色 → 字体 排序
+- UnoCSS 类：按 布局 → 宽高 → 间距 → 颜色 → 字体 排序
 - 所有用户输入先做 XSS 过滤（使用 DOMPurify）
 
 ### 样式约定
 - 移动端优先，断点: sm(640), md(768), lg(1024), xl(1280)
-- 颜色主题: 使用 TailwindCSS 自定义主题色
+- 颜色主题: 使用 UnoCSS 自定义主题色
 - 主题色: #2563EB (blue-600) 为主色
 - 商品卡片: 圆角、阴影、响应式网格
 
@@ -459,7 +600,6 @@ GET    /api/stats/click            # 点击统计
 
 ```typescript
 interface SessionState {
-  // 当前会话中已收集的用户需求
   requirements: {
     budget?: [number, number];   // [min, max]
     category?: string;
@@ -468,11 +608,8 @@ interface SessionState {
     features?: string[];
     platform?: string[];
   };
-  // 需求收集状态
   clarificationStep: number;
-  // 已推荐商品
   recommendedProducts: Product[];
-  // 用户选择的商品
   userSelected?: Product;
 }
 ```
@@ -487,14 +624,19 @@ interface SessionState {
 1. 在 `CLAUDE.md` 中先定义需求或补充说明
 2. 再实现代码
 3. 代码提交前检查类型
-4. SQLite schema 变更需写迁移脚本
+4. Schema 变更需写迁移脚本
+
+### 其他约束
+- You MUST identify the CloudBase scenario first, then read auth-tool / http-api / as appropriate before implementation.
+- 登录 / 注册 / 认证配置：先读 auth-tool，再读平台实现 skill
+- 先读 http-api，不要先走 Web SDK。
 
 ---
 
 ## 安全注意事项
 
-- 用户认证由腾讯云 CIAM 全权管理，后端不接触/存储密码
-- 后端所有需要鉴权的 API 统一通过 CIAM JWT Token 验证中间件
+- 用户认证由 CloudBase Auth 全权管理，后端不接触/存储密码
+- 后端所有需要鉴权的 API 统一通过 CloudBase JWT Token 验证中间件
 - 所有的 CPS API Keys 存环境变量，不提交
 - 前端不要暴露任何平台的 App Key/Secret
 - 推广链接跳转使用 302 重定向（服务端记录点击后跳转）
@@ -505,12 +647,13 @@ interface SessionState {
 ## 项目路线图
 
 ### Phase 1 — MVP (最小可行产品)
-- [ ] 基础后端框架搭建（Hono + SQLite + TypeScript）
-- [ ] 腾讯云 CIAM 配置与集成（前端登录页 + 后端 Token 验证中间件）
+- [x] 基础后端框架搭建（Hono + PostgreSQL + TypeScript）
+- [ ] CloudBase 认证配置与集成
 - [ ] 对话式 Agent（Claude API + Function Calling）
 - [ ] 淘宝客 CPS 接入（搜索 + 转链）
-- [ ] 前端聊天界面（SolidJS + TailwindCSS）
-- [ ] 腾讯云部署（前端 COS+CDN / 后端 CVM）
+- [ ] 前端聊天界面（SolidJS + UnoCSS）
+- [ ] CloudBase 云托管部署 + GitHub Actions 自动化
+- [ ] TDSQL-C PostgreSQL 连接与迁移
 
 ### Phase 2 — 扩展
 - [ ] 京东联盟接入
