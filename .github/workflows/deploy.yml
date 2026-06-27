@@ -47,7 +47,12 @@ jobs:
             echo "=== 1. 确保项目目录存在 ==="
             mkdir -p /opt/aixuan
 
-            echo "=== 2. 克隆或拉取代码 ==="
+            echo "=== 2. 信任 GitHub 主机密钥 ==="
+            mkdir -p ~/.ssh
+            grep -q "github.com" ~/.ssh/known_hosts 2>/dev/null || \
+              ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+
+            echo "=== 3. 克隆或拉取代码 ==="
             if [ ! -d /opt/aixuan/.git ]; then
               echo "首次部署，克隆仓库..."
               cd /opt
@@ -59,7 +64,7 @@ jobs:
               git pull origin main
             fi
 
-            echo "=== 3. 创建 .env ==="
+            echo "=== 4. 创建 .env ==="
             cat > /opt/aixuan/.env << 'ENVEOF'
             DB_PASSWORD=${{ secrets.DB_PASSWORD }}
             JWT_SECRET=${{ secrets.JWT_SECRET }}
