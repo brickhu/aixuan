@@ -56,7 +56,29 @@ if ! docker compose version &>/dev/null; then
 fi
 info "Docker Compose: $(docker compose version)"
 
-# ── 4. 配置 SSH ──
+# ── 4. 配置 Docker 镜像加速（国内访问 Docker Hub 需要） ──
+echo ""
+echo "--- 配置 Docker 镜像加速 ---"
+MIRROR_CONF="/etc/docker/daemon.json"
+if [ ! -f "$MIRROR_CONF" ] || ! grep -q "registry-mirrors" "$MIRROR_CONF" 2>/dev/null; then
+  mkdir -p /etc/docker
+  cat > "$MIRROR_CONF" << EOF
+{
+  "registry-mirrors": [
+    "https://docker.m.daocloud.io",
+    "https://docker.mirrors.ustc.edu.cn",
+    "https://registry.cn-hangzhou.aliyuncs.com"
+  ]
+}
+EOF
+  systemctl daemon-reload
+  systemctl restart docker
+  info "Docker 镜像加速已配置"
+else
+  info "Docker 镜像加速已存在"
+fi
+
+# ── 5. 配置 SSH ──
 echo ""
 echo "--- 配置 SSH (GitHub) ---"
 mkdir -p ~/.ssh

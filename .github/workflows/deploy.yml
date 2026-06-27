@@ -47,7 +47,22 @@ jobs:
             echo "=== 1. 确保项目目录存在 ==="
             mkdir -p /opt/aixuan
 
-            echo "=== 2. 配置 SSH 并信任 GitHub 主机密钥 ==="
+            echo "=== 2. 配置 Docker 镜像加速（国内访问 Docker Hub） ==="
+            mkdir -p /etc/docker
+            if [ ! -f /etc/docker/daemon.json ] || ! grep -q "registry-mirrors" /etc/docker/daemon.json 2>/dev/null; then
+              cat > /etc/docker/daemon.json << 'EOF'
+            {
+              "registry-mirrors": [
+                "https://docker.m.daocloud.io",
+                "https://registry.cn-hangzhou.aliyuncs.com"
+              ]
+            }
+            EOF
+              systemctl daemon-reload
+              systemctl restart docker
+            fi
+
+            echo "=== 3. 配置 SSH 并信任 GitHub 主机密钥 ==="
             mkdir -p ~/.ssh
             chmod 700 ~/.ssh
             # 配置 GitHub 使用 deploy-key
