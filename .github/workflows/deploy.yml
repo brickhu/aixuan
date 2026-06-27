@@ -47,8 +47,18 @@ jobs:
             echo "=== 1. 确保项目目录存在 ==="
             mkdir -p /opt/aixuan
 
-            echo "=== 2. 信任 GitHub 主机密钥 ==="
+            echo "=== 2. 配置 SSH 并信任 GitHub 主机密钥 ==="
             mkdir -p ~/.ssh
+            chmod 700 ~/.ssh
+            # 配置 GitHub 使用 deploy-key
+            cat > ~/.ssh/config << 'SSHEOF'
+            Host github.com
+              HostName github.com
+              User git
+              IdentityFile ~/.ssh/deploy-key
+              StrictHostKeyChecking no
+            SSHEOF
+            # 添加 known_hosts
             grep -q "github.com" ~/.ssh/known_hosts 2>/dev/null || \
               ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
 
