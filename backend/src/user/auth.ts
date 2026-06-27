@@ -1,8 +1,9 @@
 import { query } from '../db/pool.js';
-import type { CloudBaseAuthPayload } from '../middleware/auth.js';
+import { randomUUID } from 'node:crypto';
 
 export interface UserRow {
   id: string;
+  email: string | null;
   nickname: string | null;
   avatar_url: string | null;
   points: number;
@@ -13,50 +14,41 @@ export interface UserRow {
 }
 
 /**
- * 同步 CloudBase Auth 用户到本地数据库
- * 当用户首次登录时自动创建记录
+ * 根据邮箱查找或创建用户
+ * 用户在首次验证码登录时自动创建
  */
-export async function syncUser(payload: CloudBaseAuthPayload): Promise<{
+export async function findOrCreateUserByEmail(email: string): Promise<{
   id: string;
   isNew: boolean;
 }> {
-  const existing = await query('SELECT id FROM users WHERE id = $1', [
-    payload.sub,
-  ]);
+  const existing = await query('SELECT id FROM users WHERE email = $1', [email]);
 
   if (existing.rows.length > 0) {
-    // 更新昵称和头像（CloudBase JWT payload 可能包含这些字段）
-    if (payload.nickname || payload.picture) {
-      await query(
-        `UPDATE users SET
-          nickname = COALESCE(NULLIF($1, ''), nickname),
-          avatar_url = COALESCE(NULLIF($2, ''), avatar_url),
-          updated_at = NOW()
-        WHERE id = $3`,
-        [
-          (payload.nickname as string) ?? null,
-          (payload.picture as string) ?? null,
-          payload.sub,
-        ],
-      );
-    }
-    return { id: payload.sub, isNew: false };
+    return { id: existing.rows[0]['id'] as string, isNew: false };
   }
 
+  const id = randomUUID();
   await query(
-    'INSERT INTO users (id, nickname, avatar_url) VALUES ($1, $2, $3)',
-    [
-      payload.sub,
-      (payload.nickname as string) ?? null,
-      (payload.picture as string) ?? null,
-    ],
+    'INSERT INTO users (id, email, email_verified) VALUES ($1, $2, TRUE)',
+    [id, email],
   );
 
-  return { id: payload.sub, isNew: true };
+  return { id, isNew: true };
 }
 
 /**
- * 确保用户存在（用于 optionalAuth 场景：未登录用户创建匿名记录）
+ * 根据 ID 查找用户
+ */
+export async function findUserById(id: string): Promise<UserRow | null> {
+  const result = await query(
+    'SELECT id, email, nickname, avatar_url, points, total_earned, total_saved, created_at, updated_at FROM users WHERE id = $1',
+    [id],
+  );
+  return result.rows.length > 0 ? (result.rows[0] as UserRow) : null;
+}
+
+/**
+ * 确保用户存在（用于 optionalAuth 场景）
  */
 export async function ensureUser(userId: string): Promise<void> {
   const existing = await query('SELECT id FROM users WHERE id = $1', [userId]);

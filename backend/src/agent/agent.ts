@@ -10,7 +10,7 @@ import {
   updateSessionState,
   getSession,
 } from './sessions.js';
-import { getAllAdapters, type SearchParams } from '../cps/adapter.js';
+import { getAllAdapters, type SearchParams, type SearchResult } from '../cps/adapter.js';
 
 const anthropic = new Anthropic({
   apiKey: config.deepseekApiKey,
@@ -52,13 +52,20 @@ export async function streamChat(
       sortBy: params.sortBy as SearchParams['sortBy'],
     };
 
-    const results = await Promise.all(
+    const results = await Promise.allSettled(
       adapters
         .filter((a) => platforms.includes(a.platform))
         .map((a) => a.search(searchParams)),
     );
 
-    const flat = results.flat();
+    const flat: SearchResult[] = [];
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        flat.push(...result.value);
+      } else {
+        console.warn('[Agent] CPS search failed:', result.reason);
+      }
+    }
 
     const state = getSessionState(sessionId);
     updateSessionState(sessionId, {
@@ -127,6 +134,7 @@ export async function streamChat(
     const errMsg = error instanceof Error ? error.message : '未知错误';
     fullResponse += `\n\n抱歉，我遇到了一些问题: ${errMsg}`;
     onChunk(`\n\n抱歉，我遇到了一些问题，请稍后重试。`);
+    console.error('[streamChat] Error:', error);
   }
 
   // 保存助手消息

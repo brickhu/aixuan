@@ -18,26 +18,28 @@
 - **样式**: [TailwindCSS](https://unocss.dev) 4.x（采用最新版）
 - **构建**: Vite
 - **路由**: solid-router
-- **部署**: 腾讯云 CloudBase 云托管（静态网站）
+- **部署**: 阿里云静态托管（OSS + CDN）
 
 ### 后端
 - **运行时**: Node.js 20 + TypeScript (strict)
 - **框架**: [Hono](https://hono.dev)（轻量，支持 SSE 流式响应）
-- **数据库**: [PostgreSQL 17](https://www.postgresql.org/)（腾讯云 TDSQL-C）
+- **数据库**: [PostgreSQL 17](https://www.postgresql.org/)（Docker 部署）
 - **数据库驱动**: `pg` (node-postgres) + 连接池
 - **AI**: [DeepSeek API](https://platform.deepseek.com/)（兼容 OpenAI SDK）+ Function Calling
-- **部署**: 腾讯云 CloudBase 云托管（容器模式，Docker 部署）
+- **部署**: 阿里云轻量服务器（Docker Compose 部署）
 
 ### 用户系统
-- **认证服务**: 腾讯云 CloudBase 内置身份认证
-- **能力**: 自定义登录、匿名登录、微信扫码、手机验证码、邮箱密码
-- **流程**: 后端签发 Ticket → 前端兑换 access_token → 后端验证 JWT
-- **用户数据**: CloudBase Auth 托管用户基础信息，应用数据库仅存用户 ID 和应用级数据
+- **认证服务**: 自定义 JWT（自签发/验证）
+- **能力**: 邮箱验证码登录、微信登录、支付宝登录
+- **流程**: 用户输入邮箱 → 后端发送验证码 → 验证通过后签发 JWT
+- **第三方登录**: 接入微信开放平台、支付宝开放平台 OAuth
+- **用户数据**: 用户基础信息全部存储在本地 PostgreSQL
 
 ### 云环境
-- **CloudBase 环境 ID**: `aixuan-dev-d4gpc3d6p36f37a1e`
-- **数据库实例 ID**: `postgres-6ypc3w9s`（TDSQL-C PostgreSQL 17.10）
-- **域名**: www.aixuan.io → CloudBase 自定义域名
+- **云服务器**: 阿里云轻量应用服务器（2核2G，Ubuntu）
+- **数据库**: 服务器自建 PostgreSQL 17（Docker 部署）
+- **静态托管**: 阿里云静态托管（OSS + CDN）
+- **域名**: www.aixuan.io → 阿里云 DNS
 
 ### CPS 联盟接入（直连官方 API）
 - 淘宝/天猫 → 阿里妈妈 TOP API
@@ -80,11 +82,11 @@ aixuan/
 │   ├── .env.example
 │   ├── package.json
 │   ├── tsconfig.json
-│   ├── scripts/
-│   │   └── dev.sh
 │   └── src/
 │       ├── index.ts                  # 入口
 │       ├── config.ts                 # 配置
+│       ├── auth/                     # 认证核心
+│       │   └── jwt.ts                # JWT 签发/验证
 │       ├── db/                       # 数据库
 │       │   ├── migrate.ts            # 自动迁移
 │       │   └── pool.ts               # PG 连接池
@@ -100,7 +102,7 @@ aixuan/
 │       │   ├── pdd.ts                # 拼多多
 │       │   └── douyin.ts             # 抖音
 │       ├── user/                     # 用户模块
-│       │   ├── auth.ts               # CloudBase 认证
+│       │   ├── auth.ts               # 本地用户管理
 │       │   ├── points.ts             # 积分管理
 │       │   └── profile.ts            # 用户资料
 │       ├── routes/                   # API 路由
@@ -109,9 +111,10 @@ aixuan/
 │       │   ├── history.ts
 │       │   └── user.ts
 │       └── middleware/               # 中间件
-│           └── auth.ts               # CloudBase JWT 验证
+│           └── auth.ts               # JWT 验证中间件
 │
-├── scripts/                          # 开发/部署脚本
+├── scripts/                          # 部署脚本
+│   ├── init-server.sh                # 阿里云服务器初始化
 │   └── dev.sh
 │
 ├── .github/
@@ -128,9 +131,9 @@ aixuan/
 ### PostgreSQL Schema
 
 ```sql
--- 用户表（基础信息由 CloudBase Auth 托管，本地仅存应用数据）
+-- 用户表（所有用户信息存储在本地 PostgreSQL）
 CREATE TABLE users (
-  id            TEXT PRIMARY KEY,          -- 与 CloudBase Auth 的 UID 一致
+  id            TEXT PRIMARY KEY,          -- UUID
   nickname      TEXT,
   avatar_url    TEXT,
   points        INTEGER DEFAULT 0,         -- 积分余额
@@ -219,60 +222,107 @@ CREATE INDEX idx_points_user ON point_transactions(user_id);
 
 ---
 
-## CloudBase 认证系统
+## 认证系统
+
+### 认证方式
+
+| 方式 | 说明 | 状态 |
+|------|------|------|
+| 邮箱验证码 | 用户输入邮箱 → 后端发送验证码 → 验证通过签发 JWT | 待实现 |
+| 微信登录 | 微信开放平台 OAuth 扫码登录 | 待实现 |
+| 支付宝登录 | 支付宝开放平台 OAuth 登录 | 待实现 |
+
+### JWT 设计
+
+```typescript
+// 后端签发 JWT，使用 jose 库
+import { SignJWT, jwtVerify } from 'jose';
+
+const SECRET = new TextEncoder().encode(process.env['JWT_SECRET']);
+
+// 签发
+async function signToken(userId: string): Promise<string> {
+  return new SignJWT({ sub: userId })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuedAt()
+    .setExpirationTime('7d')
+    .sign(SECRET);
+}
+
+// 验证
+async function verifyToken(token: string) {
+  const { payload } = await jwtVerify(token, SECRET);
+  return payload;
+}
+```
 
 ### 认证流程
 
 ```
-前端 (浏览器)                         后端 (CloudBase Cloud Run)
-    │                                       │
-    │  ① 调用后端 /api/auth/ticket          │
-    │─────────────────────────────────────> │
-    │  ← { ticket }                         │  后端使用 CloudBase SDK 签发 ticket
-    │                                       │
-    │  ② 用 ticket 调用 CloudBase Auth API  │
-    │─────────────────────────────────>     │
-    │  ← { access_token, refresh_token }     │  CloudBase Auth 返回 JWT
-    │                                       │
-    │  ③ 后续请求带 Bearer token            │
-    │─────────────────────────────────────> │  后端验证 JWT → 获取 UID
-    │  ← { ok: true, data: ... }            │
+客户端                         后端 (阿里云轻量服务器)
+  │                                   │
+  │ ① POST /api/auth/send-code        │
+  │   { email }                       │  生成 6 位验证码，存入 Redis/内存
+  │─────────────────────────────────> │  发送验证码邮件（阿里云邮件推送）
+  │                                   │
+  │ ② POST /api/auth/verify-code      │
+  │   { email, code }                 │  验证码校验通过 → 签发 JWT
+  │─────────────────────────────────> │
+  │ ← { token, userId }               │
+  │                                   │
+  │ ③ 后续请求带 Bearer token         │
+  │─────────────────────────────────> │  中间件验证 JWT → 获取 userId
+  │ ← { ok: true, data: ... }         │
+```
+
+### 第三方 OAuth 流程
+
+```
+客户端                         后端
+  │                                   │
+  │ ① GET /api/auth/oauth/:platform   │  返回第三方 OAuth 授权 URL
+  │─────────────────────────────────> │
+  │ ← { redirectUrl }                 │
+  │                                   │
+  │ ② 用户跳转第三方授权页 → 授权后    │
+  │   回调后端 /api/auth/oauth/callback│  用 code 换取 access_token
+  │─────────────────────────────────> │  获取用户信息 → 创建/登录用户
+  │ ← { token, userId }               │  签发 JWT 返回
 ```
 
 ### 后端验证 Token
-
-后端通过 JWT 解码验证 CloudBase Auth 签发的 access_token（无需额外网络请求）：
 
 ```typescript
 // middleware/auth.ts
 import { jwtVerify } from 'jose';
 
-// CloudBase Auth 的 JWT 公钥端点
-const JWKS_URI = `https://${ENV_ID}.api.tcloudbasegateway.com/auth/v1/jwks`;
+const SECRET = new TextEncoder().encode(process.env['JWT_SECRET']);
 
 export async function requireAuth(c: Context, next: Next) {
-  const token = c.req.header('Authorization')?.slice(7);
-  const payload = await verifyCloudBaseToken(token);
-  if (!payload) return c.json({ ok: false, error: 'Unauthorized' }, 401);
-  c.set('userId', payload.sub);  // sub = CloudBase UID
-  await next();
+  const authHeader = c.req.header('Authorization');
+  if (!authHeader?.startsWith('Bearer ')) {
+    return c.json({ ok: false, error: 'Unauthorized' }, 401);
+  }
+  const token = authHeader.slice(7);
+  try {
+    const { payload } = await jwtVerify(token, SECRET);
+    c.set('userId', payload.sub as string);
+    await next();
+  } catch {
+    return c.json({ ok: false, error: 'Invalid or expired token' }, 401);
+  }
 }
 ```
 
-### 自定义登录（后端签发 Ticket）
+### 用户数据模型补充字段
 
-```typescript
-import cloudbase from '@cloudbase/node-sdk';
-
-const app = cloudbase.init({
-  env: 'aixuan-dev-d4gpc3d6p36f37a1e',
-  credentials: require('./tcb_custom_login.json'),
-});
-
-const ticket = app.auth().createTicket('user-custom-id', {
-  refresh: 3600 * 1000,      // access_token 刷新间隔
-  expire: 24 * 3600 * 1000,  // ticket 过期时间
-});
+```sql
+-- users 表新增字段
+ALTER TABLE users ADD COLUMN email TEXT UNIQUE;
+ALTER TABLE users ADD COLUMN email_verified BOOLEAN DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN wechat_openid TEXT UNIQUE;
+ALTER TABLE users ADD COLUMN alipay_user_id TEXT UNIQUE;
+ALTER TABLE users ADD COLUMN password_hash TEXT;  -- 可选：邮箱密码登录
 ```
 
 ---
@@ -440,8 +490,13 @@ const tools = [
 ## API 路由设计
 
 ```
-# 认证（CloudBase Auth 管理登录流程，后端签发 Ticket + 验证 Token）
-POST   /api/auth/ticket              # 为当前用户签发自定义登录 Ticket
+# 认证（自定义 JWT）
+POST   /api/auth/send-code             # 发送邮箱验证码
+POST   /api/auth/verify-code           # 验证码登录(签发JWT)
+POST   /api/auth/send-code?type=reset  # 发送重置密码验证码
+POST   /api/auth/reset-password        # 重置密码
+GET    /api/auth/oauth/:platform       # 第三方 OAuth 授权 URL
+GET    /api/auth/oauth/callback        # OAuth 回调
 
 # 聊天
 POST   /api/chat/session             # 创建新会话
@@ -465,101 +520,170 @@ GET    /api/stats/click              # 点击统计
 
 ---
 
-## CloudBase 云托管部署
+## 阿里云部署
 
-### 环境信息
-
-| 资源 | 值 |
-|------|-----|
-| CloudBase 环境 ID | `aixuan-dev-d4gpc3d6p36f37a1e` |
-| 数据库实例 ID | `postgres-6ypc3w9s` (TDSQL-C PostgreSQL 17.10) |
-| 数据库引擎 | PostgreSQL 17.10 |
-| 默认端口 | 5432 |
-| 部署方式 | 容器模式 (Docker) |
-
-### 后端云托管
-
-后端的 Dockerfile 位于 `backend/Dockerfile`。CloudBase 云托管会从代码仓库（或 CLI 上传）自动构建容器镜像并部署。
-
-#### 核心要求
-
-1. **监听 `0.0.0.0`**（通过 `HOSTNAME=0.0.0.0` 环境变量）
-2. **端口 3000**（CloudBase 配置与此一致）
-3. **健康检查端点**：`GET /api/health`
-4. **非 root 用户**运行容器
-5. **多阶段构建**以减小镜像体积
-
-#### 环境变量配置
-
-| 变量 | 必填 | 说明 |
-|------|------|------|
-| `DEEPSEEK_API_KEY` | 是 | DeepSeek API 密钥 |
-| `DEEPSEEK_BASE_URL` | 否 | `https://api.deepseek.com` | DeepSeek API 地址 |
-| `DEEPSEEK_MODEL` | 否 | `deepseek-chat` | 模型名称 |
-| `DATABASE_URL` | 是 | PostgreSQL 连接串（TDSQL-C 内网地址） |
-| `CLOUDBASE_ENV_ID` | 是 | CloudBase 环境 ID |
-| `CLOUDBASE_ACCESS_KEY` | 是 | CloudBase 自定义登录私钥文件路径 |
-| `CORS_ORIGIN` | 否 | 前端地址，默认 `http://localhost:5173` |
-| `CPS_TAOBAO_APP_KEY` | 否 | 淘宝客 App Key |
-| `CPS_TAOBAO_APP_SECRET` | 否 | 淘宝客 App Secret |
-| `CPS_TAOBAO_PID` | 否 | 淘宝客推广位 PID |
-| `CPS_JD_API_KEY` | 否 | 京东联盟 API Key |
-| `CPS_PDD_API_KEY` | 否 | 拼多多多多客 API Key |
-
-#### 数据库连接
-
-应用通过 `DATABASE_URL` 环境变量连接 TDSQL-C PostgreSQL：
+### 架构概览
 
 ```
-postgresql://username:password@10.x.x.x:5432/aixuan?sslmode=disable
+用户 → DNS (www.aixuan.io)
+         ├── 阿里云静态托管 ── 前端 SPA (SolidJS)
+         │     ├── 自定义域名 + HTTPS
+         │     └── CDN 加速
+         │
+         └── 阿里云轻量服务器 ── 后端 API (Node.js + Hono)
+               ├── Nginx 反向代理 (SSL termination)
+               ├── Docker: backend (Node.js)
+               ├── Docker: postgres:17-alpine
+               └── 数据持久化卷
 ```
 
-CloudBase Cloud Run 与 TDSQL-C 需在 **同一 VPC** 内。连接信息在 TDSQL-C 控制台 → 实例详情中获取（内网 IP、端口、用户名、密码）。
+### 轻量服务器信息
 
-### 前端云托管
+| 资源 | 规格 |
+|------|------|
+| 服务器 | 阿里云轻量应用服务器 |
+| 配置 | 2核2G（推荐） |
+| 系统 | Ubuntu 22.04 LTS |
+| 安全组 | 开放端口: 22(SSH), 80(HTTP), 443(HTTPS) |
+| Docker | Docker Engine + Compose |
 
-前端构建产物（`dist/` 目录）通过 CloudBase 托管为静态网站，绑定自定义域名 `www.aixuan.io`。
-
-### GitHub Actions 自动部署
-
-项目根目录的 `.github/workflows/deploy.yml` 配置了 CI/CD 流水线：
+### Docker Compose 部署
 
 ```yaml
-name: Deploy to CloudBase
+# docker-compose.yml (生产环境)
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: aixuan-pg
+    restart: unless-stopped
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: aixuan
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-on:
-  push:
-    branches: [main]
+  backend:
+    build: ./backend
+    container_name: aixuan-backend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      DATABASE_URL: postgresql://postgres:${DB_PASSWORD}@postgres:5432/aixuan
+      JWT_SECRET: ${JWT_SECRET}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
+      CORS_ORIGIN: https://www.aixuan.io
+      # CPS 配置...
+    depends_on:
+      postgres:
+        condition: service_healthy
 
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - run: npm ci
-      - run: npm run build
-        working-directory: ./backend
-      - run: npm install -g @cloudbase/cli
-      - run: |
-          tcb login --apiKeyId ${{ secrets.TCB_SECRET_ID }} \
-                    --apiKey ${{ secrets.TCB_SECRET_KEY }}
-          tcb cloudrun deploy \
-            -e ${{ secrets.TCB_ENV_ID }} \
-            -s aixuan-backend \
-            --port 3000 \
-            --force
+  nginx:
+    image: nginx:alpine
+    container_name: aixuan-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
 ```
 
-#### GitHub Secrets 配置
+### Nginx 配置
 
-| Secret | 来源 |
-|--------|------|
-| `TCB_SECRET_ID` | 腾讯云 CAM → 访问管理 → API 密钥管理 |
-| `TCB_SECRET_KEY` | 同上（创建时保存） |
-| `TCB_ENV_ID` | CloudBase 控制台 → 环境概览 |
+```nginx
+# nginx.conf
+server {
+    listen 80;
+    server_name www.aixuan.io;
+    return 301 https://$server_name$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name www.aixuan.io;
+
+    ssl_certificate     /etc/nginx/ssl/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/privkey.pem;
+
+    # API 反向代理
+    location /api/ {
+        proxy_pass http://backend:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # SSE 支持
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 86400s;
+    }
+
+    # 前端静态资源 → 阿里云静态托管
+    location / {
+        return 301 https://static.aixuan.io$request_uri;
+    }
+}
+```
+
+### 核心要求
+
+1. **监听 `0.0.0.0`** — 通过 `HOSTNAME=0.0.0.0` 环境变量
+2. **端口 3000** — 后端容器端口
+3. **健康检查端点** — `GET /api/health`
+4. **自动重启** — `restart: unless-stopped`
+5. **数据持久化** — Docker volume 存储 PostgreSQL 数据
+6. **非 root 用户**运行容器
+
+### 前端部署（阿里云静态托管）
+
+前端构建产物（`frontend/dist/` 目录）部署到阿里云静态托管：
+
+1. 构建：`cd frontend && pnpm build`
+2. 上传到阿里云 OSS Bucket
+3. 配置静态托管域名 `www.aixuan.io`
+4. 开启 CDN 加速
+5. 配置 HTTPS 证书
+
+### 首次部署步骤
+
+```bash
+# 1. SSH 登录服务器
+ssh root@服务器IP
+
+# 2. 安装 Docker
+curl -fsSL https://get.docker.com | sh
+
+# 3. 克隆代码 & 部署
+git clone https://github.com/your-org/aixuan.git
+cd aixuan
+cp .env.production .env   # 编辑环境变量
+docker compose up -d
+
+# 4. 配置 SSL 证书
+docker run -it --rm -v ./ssl:/etc/letsencrypt \
+  certbot/certbot certonly --standalone \
+  -d www.aixuan.io
+
+# 5. 重启 Nginx 加载证书
+docker compose restart nginx
+```
 
 ---
 
@@ -627,35 +751,47 @@ interface SessionState {
 4. Schema 变更需写迁移脚本
 
 ### 其他约束
-- You MUST identify the CloudBase scenario first, then read auth-tool / http-api / as appropriate before implementation.
-- 登录 / 注册 / 认证配置：先读 auth-tool，再读平台实现 skill
-- 先读 http-api，不要先走 Web SDK。
+- 认证实现：使用 jose 库签发/验证 JWT，参考 `middleware/auth.ts` 中的 verifyToken
+- 所有 API 返回统一格式：`{ ok: boolean, data?: T, error?: string }`
+- Schema 变更需写迁移脚本
 
 ---
 
 ## 安全注意事项
 
-- 用户认证由 CloudBase Auth 全权管理，后端不接触/存储密码
-- 后端所有需要鉴权的 API 统一通过 CloudBase JWT Token 验证中间件
+- JWT Secret 必须使用强随机字符串，通过环境变量注入，不提交到代码库
+- 邮箱验证码有效期 5 分钟，单 IP 每小时限制发送次数
+- 所有需要鉴权的 API 统一通过 JWT 验证中间件
 - 所有的 CPS API Keys 存环境变量，不提交
 - 前端不要暴露任何平台的 App Key/Secret
 - 推广链接跳转使用 302 重定向（服务端记录点击后跳转）
 - 遵循各平台联盟的推广规范，避免封号
+- 数据库中用户密码仅存 bcrypt hash，不存明文
 
 ---
 
 ## 项目路线图
 
+### Phase 0 — 平台迁移（当前任务）
+- [ ] 购买阿里云轻量服务器 + 静态托管
+- [ ] 替换认证系统（自定义 JWT + 邮箱验证码）
+- [ ] 实现自定义 JWT 签发/验证中间件
+- [ ] 本地 docker-compose 部署验证
+- [ ] 配置 Nginx 反向代理 + SSL
+- [ ] 更新 GitHub Actions 部署流程
+- [ ] 数据迁移 & DNS 切换
+
 ### Phase 1 — MVP (最小可行产品)
 - [x] 基础后端框架搭建（Hono + PostgreSQL + TypeScript）
-- [ ] CloudBase 认证配置与集成
-- [ ] 对话式 Agent（Claude API + Function Calling）
+- [x] 邮箱验证码登录（JWT 自签发）
+- [ ] 对话式 Agent（DeepSeek API + Function Calling）
 - [ ] 淘宝客 CPS 接入（搜索 + 转链）
-- [ ] 前端聊天界面（SolidJS + UnoCSS）
-- [ ] CloudBase 云托管部署 + GitHub Actions 自动化
-- [ ] TDSQL-C PostgreSQL 连接与迁移
+- [ ] 前端搭建（SolidJS + UnoCSS）
+- [ ] 阿里云 Docker Compose 部署
+- [ ] GitHub Actions 自动化部署
 
 ### Phase 2 — 扩展
+- [ ] 微信登录 & 支付宝登录
 - [ ] 京东联盟接入
 - [ ] 拼多多多多客接入
 - [ ] 商品卡片展示优化

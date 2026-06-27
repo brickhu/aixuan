@@ -12,6 +12,9 @@ build/
 .env.local
 .env.*.local
 
+# SSL certificates
+ssl/
+
 # IDE
 .idea/
 .vscode/

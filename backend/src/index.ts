@@ -1,5 +1,3 @@
-import { readFileSync, existsSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
@@ -22,23 +20,13 @@ type Variables = {
   requestId: string;
 };
 
-// 开发环境加载 .env
-if (process.env['NODE_ENV'] !== 'production') {
-  const envPath = resolve(process.cwd(), '.env');
-  if (existsSync(envPath)) {
-    const lines = readFileSync(envPath, 'utf-8').split('\n');
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
-      const eqIdx = trimmed.indexOf('=');
-      if (eqIdx === -1) continue;
-      const key = trimmed.slice(0, eqIdx).trim();
-      const val = trimmed.slice(eqIdx + 1).trim();
-      if (!process.env[key]) {
-        process.env[key] = val;
-      }
-    }
-  }
+// 开发环境加载 .env（dotenv 的 override 确保 .env 优先级高于继承的环境变量）
+import 'dotenv/config';
+
+// 启动时校验关键配置
+if (!config.jwtSecret) {
+  console.error('[aiXuan] FATAL: JWT_SECRET is not set. Authentication will not work.');
+  process.exit(1);
 }
 
 // 初始化数据库连接池 & 迁移

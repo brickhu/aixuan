@@ -1,0 +1,58 @@
+# 生产环境 Docker Compose — 部署在阿里云轻量服务器
+# 使用方式: docker compose up -d
+
+services:
+  # ── PostgreSQL ──
+  postgres:
+    image: postgres:17-alpine
+    container_name: aixuan-pg
+    restart: unless-stopped
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: aixuan
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── 后端 API ──
+  backend:
+    build: ./backend
+    container_name: aixuan-backend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      DATABASE_URL: postgresql://postgres:${DB_PASSWORD}@postgres:5432/aixuan
+      JWT_SECRET: ${JWT_SECRET}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com/anthropic}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}
+      CORS_ORIGIN: ${CORS_ORIGIN:-https://www.aixuan.io}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ── Nginx 反向代理 ──
+  nginx:
+    image: nginx:alpine
+    container_name: aixuan-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
