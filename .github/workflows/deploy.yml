@@ -44,11 +44,23 @@ jobs:
           script: |
             set -e
 
-            echo "=== 1. 进入项目目录 ==="
-            cd /opt/aixuan
+            echo "=== 1. 确保项目目录存在 ==="
+            mkdir -p /opt/aixuan
 
-            echo "=== 2. 更新 .env（从 GitHub Secrets 注入） ==="
-            cat > .env << 'ENVEOF'
+            echo "=== 2. 克隆或拉取代码 ==="
+            if [ ! -d /opt/aixuan/.git ]; then
+              echo "首次部署，克隆仓库..."
+              cd /opt
+              rm -rf aixuan
+              git clone git@github.com:${{ github.repository }}.git aixuan
+              cd /opt/aixuan
+            else
+              cd /opt/aixuan
+              git pull origin main
+            fi
+
+            echo "=== 3. 创建 .env ==="
+            cat > /opt/aixuan/.env << 'ENVEOF'
             DB_PASSWORD=${{ secrets.DB_PASSWORD }}
             JWT_SECRET=${{ secrets.JWT_SECRET }}
             DEEPSEEK_API_KEY=${{ secrets.DEEPSEEK_API_KEY }}
@@ -57,10 +69,8 @@ jobs:
             CORS_ORIGIN=${{ secrets.CORS_ORIGIN }}
             ENVEOF
 
-            echo "=== 3. 拉取最新代码 ==="
-            git pull origin main
-
             echo "=== 4. 构建并重启服务 ==="
+            cd /opt/aixuan
             docker compose up -d --build
 
             echo "=== 5. 清理旧镜像 ==="
