@@ -4,7 +4,7 @@
 
 爱选是一个 **AI 驱动的商品导购平台**，用户通过自然语言对话描述购买需求，AI 逐步引导用户明确需求，最终生成带 CPS 推广链接的商品推荐。
 
-- **域名**: www.aixuan.io
+- **域名**: www.aixuan.vip
 - **定位**: 通用导购系统，覆盖多电商平台的 CPS
 - **盈利模式**: CPS 分佣 + 用户积分/返利体系
 - **开发方式**: 全程 AI 驱动
@@ -39,7 +39,7 @@
 - **云服务器**: 阿里云轻量应用服务器（2核2G，Ubuntu）
 - **数据库**: 服务器自建 PostgreSQL 17（Docker 部署）
 - **静态托管**: 阿里云静态托管（OSS + CDN）
-- **域名**: www.aixuan.io → 阿里云 DNS
+- **域名**: www.aixuan.vip → 阿里云 DNS
 
 ### CPS 联盟接入（直连官方 API）
 - 淘宝/天猫 → 阿里妈妈 TOP API
@@ -525,16 +525,17 @@ GET    /api/stats/click              # 点击统计
 ### 架构概览
 
 ```
-用户 → DNS (www.aixuan.io)
-         ├── 阿里云静态托管 ── 前端 SPA (SolidJS)
-         │     ├── 自定义域名 + HTTPS
-         │     └── CDN 加速
-         │
-         └── 阿里云轻量服务器 ── 后端 API (Node.js + Hono)
-               ├── Nginx 反向代理 (SSL termination)
-               ├── Docker: backend (Node.js)
-               ├── Docker: postgres:17-alpine
-               └── 数据持久化卷
+用户 → DNS
+        ├── www.aixuan.vip (CNAME → OSS) ── 前端 SPA (SolidJS)
+        │     ├── 阿里云静态托管
+        │     ├── 自定义域名 + HTTPS
+        │     └── CDN 加速
+        │
+        └── api.aixuan.vip (A → 47.99.65.147) ── 后端 API
+              ├── Nginx 反向代理 (SSL termination)
+              ├── Docker: backend (Node.js + Hono)
+              ├── Docker: postgres:17-alpine
+              └── 数据持久化卷
 ```
 
 ### 轻量服务器信息
@@ -581,7 +582,7 @@ services:
       DATABASE_URL: postgresql://postgres:${DB_PASSWORD}@postgres:5432/aixuan
       JWT_SECRET: ${JWT_SECRET}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
-      CORS_ORIGIN: https://www.aixuan.io
+      CORS_ORIGIN: https://www.aixuan.vip
       # CPS 配置...
     depends_on:
       postgres:
@@ -607,16 +608,16 @@ volumes:
 ### Nginx 配置
 
 ```nginx
-# nginx.conf
+# nginx.conf — api.aixuan.vip
 server {
     listen 80;
-    server_name www.aixuan.io;
+    server_name api.aixuan.vip;
     return 301 https://$server_name$request_uri;
 }
 
 server {
     listen 443 ssl;
-    server_name www.aixuan.io;
+    server_name api.aixuan.vip;
 
     ssl_certificate     /etc/nginx/ssl/fullchain.pem;
     ssl_certificate_key /etc/nginx/ssl/privkey.pem;
@@ -635,9 +636,10 @@ server {
         proxy_read_timeout 86400s;
     }
 
-    # 前端静态资源 → 阿里云静态托管
+    # 非 API 路径返回提示
     location / {
-        return 301 https://static.aixuan.io$request_uri;
+        return 200 "aiXuan API Server is running.\n";
+        add_header Content-Type text/plain;
     }
 }
 ```
@@ -657,7 +659,7 @@ server {
 
 1. 构建：`cd frontend && pnpm build`
 2. 上传到阿里云 OSS Bucket
-3. 配置静态托管域名 `www.aixuan.io`
+3. 配置静态托管域名 `www.aixuan.vip`
 4. 开启 CDN 加速
 5. 配置 HTTPS 证书
 
@@ -676,10 +678,10 @@ cd aixuan
 cp .env.production .env   # 编辑环境变量
 docker compose up -d
 
-# 4. 配置 SSL 证书
+# 4. 配置 SSL 证书（用于 api.aixuan.vip）
 docker run -it --rm -v ./ssl:/etc/letsencrypt \
   certbot/certbot certonly --standalone \
-  -d www.aixuan.io
+  -d api.aixuan.vip
 
 # 5. 重启 Nginx 加载证书
 docker compose restart nginx

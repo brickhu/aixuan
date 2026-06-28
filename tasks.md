@@ -98,21 +98,23 @@ echo "下一步: 在 /opt/aixuan/ 部署项目"
 
 > 控制台: https://dns.console.aliyun.com/
 
-假设你的域名 `www.aixuan.io` 在阿里云 DNS 管理：
+假设你的域名 `www.aixuan.vip` 在阿里云 DNS 管理：
 
 | 记录类型 | 主机记录 | 记录值 | 说明 |
 |----------|----------|--------|------|
-| A | `www` | 轻量服务器公网 IP | 后端 API 入口 |
-| CNAME | `static` | `aixuan-static.oss-cn-hangzhou.aliyuncs.com` | 前端静态资源 |
+| CNAME | `www` | OSS Bucket 域名 | 前端静态托管 |
+| A | `api` | `47.99.65.147` | 后端 API（Nginx 反向代理） |
 
 如果域名不在阿里云，需要在当前 DNS 服务商处添加以上记录。
 
 ### 1.5 准备 SSL 证书
 
+为 `api.aixuan.vip` 申请 SSL 证书（Nginx 需要）：
+
 **方案一：阿里云免费证书（推荐，省心）**
 > 控制台: https://yundun.console.aliyun.com/?p=cas
 1. 进入 SSL 证书 → 免费证书 → 立即购买（0元）
-2. 申请证书，绑定域名 `www.aixuan.io`
+2. 申请证书，绑定域名 `api.aixuan.vip`
 3. 域名验证通过后下载证书（Nginx 格式）
 4. 后续 Step 3 部署时使用
 
@@ -121,7 +123,7 @@ echo "下一步: 在 /opt/aixuan/ 部署项目"
 # 在服务器上执行（需先开放 80 端口）
 docker run -it --rm -v /opt/aixuan/ssl:/etc/letsencrypt \
   -p 80:80 certbot/certbot certonly --standalone \
-  -d www.aixuan.io --non-interactive --agree-tos \
+  -d api.aixuan.vip --non-interactive --agree-tos \
   -m your@email.com
 ```
 
@@ -183,7 +185,7 @@ docker run -it --rm -v /opt/aixuan/ssl:/etc/letsencrypt \
 - [ ] 新增 `backend/.env.production`
   - DATABASE_URL 指向 Docker 内网
   - JWT_SECRET 使用强随机字符串
-  - CORS_ORIGIN 设为 `https://www.aixuan.io`
+  - CORS_ORIGIN 设为 `https://www.aixuan.vip`（前端域名）
 
 ---
 
@@ -221,11 +223,19 @@ docker run -it --rm -v /opt/aixuan/ssl:/etc/letsencrypt \
 - [ ] 验证 Nginx SSL 配置
 - [ ] 验证 API 接口正常响应
 
-### 5.3 DNS 切换
-- [ ] 将 `www.aixuan.io` 解析指向阿里云
+### 5.3 DNS 切换（CNAME 到 OSS + A 记录到服务器）
+
+**后端验证：**
+- [ ] 添加 A 记录 `api.aixuan.vip → 47.99.65.147`
+- [ ] 通过 `https://api.aixuan.vip/api/health` 验证 API
+
+**前端验证（前端项目创建后）：**
+- [ ] 添加 CNAME `www.aixuan.vip → OSS Bucket 域名`
+- [ ] 通过 `https://www.aixuan.vip` 访问前端
 
 ### 5.4 最终验证
-- [ ] 通过浏览器访问 `https://www.aixuan.io`
+- [ ] 前端页面正常显示
+- [ ] 前端请求 `https://api.aixuan.vip/api/*` 正常返回
 - [ ] 测试完整登录流程
 - [ ] 检查 GitHub Actions 自动部署是否正常
 

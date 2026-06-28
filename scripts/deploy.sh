@@ -162,7 +162,7 @@ prompt_if_missing "JWT_SECRET" "" "JWT 签名密钥 (留空自动生成)"
 prompt_if_missing "DEEPSEEK_API_KEY" "" "DeepSeek API Key"
 prompt_if_missing "DEEPSEEK_BASE_URL" "https://api.deepseek.com/anthropic" "DeepSeek API 地址"
 prompt_if_missing "DEEPSEEK_MODEL" "deepseek-v4-flash" "DeepSeek 模型名"
-prompt_if_missing "CORS_ORIGIN" "https://www.aixuan.io" "前端域名"
+prompt_if_missing "CORS_ORIGIN" "https://www.aixuan.vip" "前端域名"
 
 # 自动生成 JWT_SECRET
 if [ -z "${JWT_SECRET:-}" ]; then
