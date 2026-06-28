@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { stream } from 'hono/streaming';
 import { requireAuth, optionalAuth } from '../middleware/auth.js';
-import { streamChat } from '../agent/agent.js';
+import { streamChat, extractOptions } from '../agent/agent.js';
 import {
   createSession,
   getSession,
@@ -42,9 +42,40 @@ chat.post('/session/:id', optionalAuth, async (c) => {
   return stream(c, async (s) => {
     s.write(`data: ${JSON.stringify({ type: 'start' })}\n\n`);
 
-    await streamChat(sessionId, message, (chunk) => {
-      s.write(`data: ${JSON.stringify({ type: 'text', content: chunk })}\n\n`);
-    });
+    const { content: fullResponse, structuredOptions } = await streamChat(
+      sessionId,
+      message,
+      (chunk) => {
+        s.write(`data: ${JSON.stringify({ type: 'text', content: chunk })}\n\n`);
+      },
+      (products) => {
+        // 精简商品数据，只传前端需要的字段
+        const simplified = products.map((p) => ({
+          title: p.title,
+          price: p.price,
+          imageUrl: p.imageUrl,
+          platform: p.platform,
+          itemUrl: p.itemUrl,
+          shopName: p.shopName,
+          salesCount: p.salesCount,
+        }));
+        s.write(`data: ${JSON.stringify({ type: 'products', products: simplified })}\n\n`);
+      },
+    );
+
+    // 使用结构化选项（优先），否则回退到文本提取
+    const options = structuredOptions.length > 0
+      ? structuredOptions
+      : extractOptions(fullResponse);
+
+    if (options.length > 0) {
+      // 推送结构化选项：{ label, value } 格式
+      const structured = options.map((opt) => ({
+        label: opt,
+        value: opt,
+      }));
+      s.write(`data: ${JSON.stringify({ type: 'options', options: structured })}\n\n`);
+    }
 
     s.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
   });

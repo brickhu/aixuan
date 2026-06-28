@@ -5,7 +5,8 @@ on:
     branches: [main]
 
 jobs:
-  deploy:
+  # ── 后端部署 ──
+  deploy-backend:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -23,7 +24,7 @@ jobs:
           cache: 'pnpm'
           cache-dependency-path: backend/pnpm-lock.yaml
 
-      - name: Install dependencies
+      - name: Install backend dependencies
         run: pnpm install --frozen-lockfile
         working-directory: ./backend
 
@@ -31,7 +32,7 @@ jobs:
         run: pnpm typecheck
         working-directory: ./backend
 
-      - name: Build
+      - name: Build backend
         run: pnpm build
         working-directory: ./backend
 
@@ -65,7 +66,6 @@ jobs:
             echo "=== 3. 配置 SSH 并信任 GitHub 主机密钥 ==="
             mkdir -p ~/.ssh
             chmod 700 ~/.ssh
-            # 配置 GitHub 使用 deploy-key
             cat > ~/.ssh/config << 'SSHEOF'
             Host github.com
               HostName github.com
@@ -73,11 +73,10 @@ jobs:
               IdentityFile ~/.ssh/deploy-key
               StrictHostKeyChecking no
             SSHEOF
-            # 添加 known_hosts
             grep -q "github.com" ~/.ssh/known_hosts 2>/dev/null || \
               ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
 
-            echo "=== 3. 克隆或拉取代码 ==="
+            echo "=== 4. 克隆或拉取代码 ==="
             if [ ! -d /opt/aixuan/.git ]; then
               echo "首次部署，克隆仓库..."
               cd /opt
@@ -89,7 +88,7 @@ jobs:
               git pull origin main
             fi
 
-            echo "=== 4. 创建 .env ==="
+            echo "=== 5. 创建 .env ==="
             cat > /opt/aixuan/.env << 'ENVEOF'
             DB_PASSWORD=${{ secrets.DB_PASSWORD }}
             JWT_SECRET=${{ secrets.JWT_SECRET }}
@@ -99,11 +98,61 @@ jobs:
             CORS_ORIGIN=${{ secrets.CORS_ORIGIN }}
             ENVEOF
 
-            echo "=== 4. 构建并重启服务 ==="
+            echo "=== 6. 构建并重启服务 ==="
             cd /opt/aixuan
             docker compose up -d --build
 
-            echo "=== 5. 清理旧镜像 ==="
+            echo "=== 7. 清理旧镜像 ==="
             docker image prune -f
 
-            echo "=== ✅ 部署完成 ==="
+            echo "=== ✅ 后端部署完成 ==="
+
+  # ── 前端部署（阿里云 OSS 静态托管） ──
+  deploy-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.8.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: ./frontend
+
+      - name: Build frontend
+        run: pnpm build
+        working-directory: ./frontend
+        env:
+          VITE_API_BASE: ${{ secrets.VITE_API_BASE }}
+
+      - name: Install ossutil
+        run: |
+          wget -q https://gosspublic.alicdn.com/ossutil/1.7.19/ossutil-1.7.19-linux-amd64.zip
+          unzip -q ossutil-1.7.19-linux-amd64.zip
+          chmod +x ossutil-1.7.19-linux-amd64/ossutil
+          sudo mv ossutil-1.7.19-linux-amd64/ossutil /usr/local/bin/ossutil
+
+      - name: Sync to OSS
+        run: |
+          ossutil config -e ${{ secrets.OSS_ENDPOINT }} -i ${{ secrets.OSS_ACCESS_KEY_ID }} -k ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+          ossutil sync ./frontend/dist/ oss://${{ secrets.OSS_BUCKET_NAME }}/ -f --delete
+
+      - name: Set OSS file public-read
+        run: |
+          ossutil set-acl oss://${{ secrets.OSS_BUCKET_NAME }}/ --acl public-read -r -f
+
+      - name: Configure static website
+        run: |
+          ossutil website --index-file index.html --error-file index.html oss://${{ secrets.OSS_BUCKET_NAME }}/
+          echo "=== ✅ 前端部署完成 ==="

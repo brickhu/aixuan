@@ -18,6 +18,41 @@ const anthropic = new Anthropic({
 });
 
 type OnChunk = (chunk: string) => void;
+type OnProducts = (products: SearchResult[]) => void;
+
+/**
+ * 从回复中提取选项列表（问句中的可选答案）
+ */
+export function extractOptions(response: string): string[] {
+  const seen = new Set<string>();
+  const add = (items: string[]) => { for (const item of items) { if (item && item.length < 30) seen.add(item); } };
+  const clean = (text: string) => text.replace(/^\s*\d+[\.、]\s*/, '').replace(/^\s*[A-Z][\.、\)]\s*/, '').trim();
+
+  // 1. 提取编号选项：如 "1. xxx 2. yyy" 或 "1、xxx 2、yyy"
+  const numbered = response.match(/(?:^|\n)\s*(?:\d+)[\.、]\s*([^\n]+?)(?=\s*(?:\d+)[\.、]|\s*$)/gm);
+  if (numbered && numbered.length >= 2) {
+    add(numbered.map(clean));
+  }
+
+  // 2. 提取字母选项：如 "A. xxx B. yyy"
+  const alpha = response.match(/(?:^|\n)\s*([A-Z])[\.、\)]\s*([^\n]+?)(?=\s*(?:[A-Z])[\.、\)]|\s*$)/gm);
+  if (alpha && alpha.length >= 2) {
+    add(alpha.map(clean));
+  }
+
+  // 3. 扫描所有"还是"句子（不只最后一句）
+  const sentences = response.split(/[。！？\n]/);
+  for (const s of sentences) {
+    if (!s.includes('还是')) continue;
+    const parts = s.split('还是').map((p) => p.trim()).filter(Boolean);
+    const cleaned = parts.map((p) => {
+      return p.replace(/^(?:你想?|你?要|可以|选择|看看|推荐|比如)\s*/, '').replace(/[？?]*$/, '').trim();
+    }).filter((p) => p.length > 0 && p.length < 25);
+    if (cleaned.length >= 2) add(cleaned);
+  }
+
+  return [...seen];
+}
 
 /**
  * 流式对话（DeepSeek API）
@@ -26,7 +61,8 @@ export async function streamChat(
   sessionId: string,
   userMessage: string,
   onChunk: OnChunk,
-): Promise<void> {
+  onProducts?: OnProducts,
+): Promise<{ content: string; structuredOptions: string[] }> {
   // 保存用户消息
   await addMessage(sessionId, 'user', userMessage, 'text');
 
@@ -77,6 +113,7 @@ export async function streamChat(
   });
 
   let fullResponse = '';
+  const structuredOptions: string[] = [];
 
   try {
     const stream = anthropic.messages.stream({
@@ -104,9 +141,7 @@ export async function streamChat(
           break;
 
         case 'content_block_start':
-          if (event.content_block.type === 'tool_use') {
-            fullResponse += `\n\n[使用工具: ${event.content_block.name}]\n\n`;
-          }
+          // 工具调用由 message_stop 统一处理，此处不追加文本
           break;
 
         case 'message_delta':
@@ -123,8 +158,33 @@ export async function streamChat(
 
           for (const toolUse of toolUseBlocks) {
             const result = await handler(toolUse.name, toolUse.input as Record<string, unknown>);
-            fullResponse += `\n\n[工具结果]\n${result}\n\n`;
-            onChunk(`\n\n[工具结果]\n${result}\n\n`);
+            if (toolUse.name === 'search_products') {
+              // 商品搜索结果单独通过 SSE products 事件推送前端渲染
+              try {
+                const products = JSON.parse(result) as SearchResult[];
+                fullResponse += `\n\n`;
+                onChunk(`\n\n`);
+                if (products.length > 0 && onProducts) {
+                  onProducts(products);
+                }
+              } catch {
+                fullResponse += `\n\n[搜索结果]\n${result}\n\n`;
+                onChunk(`\n\n[搜索结果]\n${result}\n\n`);
+              }
+            } else if (toolUse.name === 'clarify_requirement') {
+              // 提取结构化选项，不追加到文本流——气泡中只显示 AI 自然语言问题，选项由芯片承载
+              try {
+                const parsed = JSON.parse(result);
+                if (Array.isArray(parsed.options) && parsed.options.length > 0) {
+                  structuredOptions.push(...parsed.options);
+                }
+              } catch {
+                // ignore parse errors
+              }
+            } else {
+              fullResponse += `\n\n${result}\n\n`;
+              onChunk(`\n\n${result}\n\n`);
+            }
           }
           break;
         }
@@ -155,4 +215,6 @@ export async function streamChat(
       updateSessionSummary(sessionId, summaryParts.join(' | '), state.recommendedProducts.length);
     }
   }
+
+  return { content: fullResponse, structuredOptions };
 }
